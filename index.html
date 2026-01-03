@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>অ্যাডমিন প্যানেল | খিদে লাগছে</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;600;700&display=swap');
+        body { font-family: 'Hind Siliguri', sans-serif; background-color: #f3f4f6; }
+        .sidebar-active { border-left: 4px solid #ef4444; background: #fee2e2; color: #b91c1c; }
+        .hidden-section { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Alarm Sound -->
+    <audio id="order-sound" preload="auto" loop>
+        <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
+    </audio>
+
+    <!-- New Order Notification Bar -->
+    <div id="alarm-overlay" class="hidden fixed top-0 left-0 w-full bg-green-600 text-white p-4 z-[200] flex justify-between items-center shadow-lg">
+        <p class="font-bold flex items-center gap-2"><i class="fas fa-utensils animate-bounce"></i> নতুন অর্ডার এসেছে!</p>
+        <button onclick="stopAlarm()" class="bg-white text-green-600 px-6 py-2 rounded-full font-black text-sm">অর্ডার দেখুন</button>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-50 px-4">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md">
+            <h2 class="text-3xl font-bold text-center text-red-600 mb-2">রেস্টুরেন্ট প্যানেল</h2>
+            <p class="text-center text-gray-500 mb-6 italic">আপনার রেস্টুরেন্ট ম্যানেজ করুন</p>
+            
+            <div id="res-selector-area">
+                <label class="block text-sm font-bold mb-2">রেস্টুরেন্ট আইডি দিয়ে প্রবেশ করুন:</label>
+                <input type="text" id="admin-res-id" placeholder="যেমন: 07" class="w-full p-4 mb-4 border rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold">
+                <button onclick="accessRestaurant()" class="w-full bg-red-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-red-700 mb-4 shadow-lg active:scale-95 transition">ওপেন প্যানেল</button>
+                
+                <div class="relative flex py-5 items-center">
+                    <div class="flex-grow border-t border-gray-300"></div>
+                    <span class="flex-shrink mx-4 text-gray-400 text-sm">অথবা</span>
+                    <div class="flex-grow border-t border-gray-300"></div>
+                </div>
+
+                <button onclick="toggleNewResForm()" class="w-full border-2 border-red-600 text-red-600 py-3 rounded-xl font-bold hover:bg-red-50 transition">নতুন রেস্টুরেন্ট রেজিস্টার</button>
+            </div>
+
+            <div id="new-res-form" class="hidden">
+                <h3 class="font-bold text-gray-700 mb-4 text-center">নতুন রেস্টুরেন্ট তথ্য</h3>
+                <input type="text" id="new-res-name" placeholder="রেস্টুরেন্টের নাম" class="w-full p-3 mb-3 border rounded-lg outline-none">
+                <input type="text" id="new-res-id" placeholder="আইডি নম্বর" class="w-full p-3 mb-3 border rounded-lg outline-none font-bold">
+                <input type="number" id="new-res-phone" placeholder="মোবাইল নম্বর" class="w-full p-3 mb-3 border rounded-lg outline-none">
+                <div class="flex gap-2">
+                    <button onclick="createNewRestaurant()" class="flex-1 bg-green-600 text-white py-3 rounded-lg font-bold shadow-md">সেভ করুন</button>
+                    <button onclick="toggleNewResForm()" class="flex-1 bg-gray-200 py-3 rounded-lg font-bold">বাতিল</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main-content" class="hidden min-h-screen flex flex-col md:flex-row">
+        <!-- Sidebar -->
+        <div class="w-full md:w-64 bg-white shadow-md z-10 flex flex-col">
+            <div class="p-6 border-b bg-red-50">
+                <h1 id="display-res-name" class="text-xl font-black text-red-600 uppercase italic leading-tight">LOADING...</h1>
+                <p id="display-res-id" class="text-xs text-gray-500 font-bold mt-1"></p>
+                <button onclick="backToAdmin()" class="mt-4 text-[10px] bg-red-600 text-white px-3 py-1.5 rounded-full font-bold uppercase tracking-wider shadow-sm">Switch Account</button>
+            </div>
+            <nav class="mt-4 grow">
+                <button onclick="showSection('dashboard')" id="btn-dashboard" class="nav-btn w-full text-left px-6 py-4 flex items-center gap-3 sidebar-active font-bold transition"><i class="fas fa-chart-pie"></i> ড্যাশবোর্ড</button>
+                <button onclick="showSection('orders')" id="btn-orders" class="nav-btn w-full text-left px-6 py-4 flex items-center gap-3 text-gray-700 font-bold transition"><i class="fas fa-shopping-basket"></i> অর্ডারসমূহ</button>
+                <button onclick="showSection('menu')" id="btn-menu" class="nav-btn w-full text-left px-6 py-4 flex items-center gap-3 text-gray-700 font-bold transition"><i class="fas fa-utensils"></i> খাবারের মেনু</button>
+                <button onclick="showSection('gallery')" id="btn-gallery" class="nav-btn w-full text-left px-6 py-4 flex items-center gap-3 text-gray-700 font-bold transition"><i class="fas fa-images"></i> গ্যালারি</button>
+            </nav>
+        </div>
+
+        <main class="flex-1 p-4 md:p-8 overflow-y-auto">
+            <!-- Dashboard Section -->
+            <section id="sec-dashboard">
+                <h2 class="text-2xl font-black mb-6">ওভারভিউ</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-red-500">
+                        <p class="text-gray-400 text-xs font-bold uppercase">মোট বিক্রি</p>
+                        <p class="text-3xl font-black text-gray-800" id="stat-res-revenue">৳ 0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-blue-500">
+                        <p class="text-gray-400 text-xs font-bold uppercase">মোট অর্ডার</p>
+                        <p class="text-3xl font-black text-gray-800" id="stat-res-orders">0</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Orders Section -->
+            <section id="sec-orders" class="hidden-section">
+                <h2 class="text-2xl font-black mb-6">সাম্প্রতিক অর্ডারসমূহ</h2>
+                <div id="res-orders-list" class="grid gap-4"></div>
+            </section>
+
+            <!-- Menu Section -->
+            <section id="sec-menu" class="hidden-section">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-black">মেনু ম্যানেজমেন্ট</h2>
+                    <button onclick="addMenuItem()" id="add-item-btn" class="bg-red-600 text-white px-5 py-2.5 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition">+ খাবার যোগ করুন</button>
+                </div>
+                <div class="bg-white rounded-3xl shadow-sm border overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-100 border-b">
+                            <tr>
+                                <th class="p-4 text-xs font-bold uppercase text-gray-500">ছবি ও নাম</th>
+                                <th class="p-4 text-xs font-bold uppercase text-gray-500">মূল্য</th>
+                                <th class="p-4 text-xs font-bold uppercase text-gray-500 text-right">অ্যাকশন</th>
+                            </tr>
+                        </thead>
+                        <tbody id="menu-table-body">
+                            <!-- Items will load here -->
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Gallery Section -->
+            <section id="sec-gallery" class="hidden-section">
+                <h2 class="text-2xl font-black mb-6">ফটো গ্যালারি</h2>
+                <div id="gallery-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4"></div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD_TytbX1kd4SKQ5uHZfd5XVGwdw0gzUOE",
+            authDomain: "feeling-hungry-102a9.firebaseapp.com",
+            databaseURL: "https://feeling-hungry-102a9-default-rtdb.firebaseio.com",
+            projectId: "feeling-hungry-102a9",
+            storageBucket: "feeling-hungry-102a9.firebasestorage.app",
+            messagingSenderId: "736201265500",
+            appId: "1:736201265500:web:7b7064b314247c02ad7199"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const IMGBB_API_KEY = "f77594f1539a9e1ee530ef213b0cae4a"; 
+
+        let currentRes = null;
+        let lastOrderCount = 0;
+
+        function accessRestaurant() {
+            const idNo = document.getElementById('admin-res-id').value.trim();
+            if(!idNo) return alert("রেস্টুরেন্ট আইডি দিন!");
+            db.ref('restaurants').once('value', snap => {
+                const restaurants = snap.val();
+                let foundRes = null;
+                for (let key in restaurants) {
+                    if (restaurants[key].idNo == idNo) {
+                        foundRes = { ...restaurants[key], fireKey: key };
+                        break;
+                    }
+                }
+                if (foundRes) {
+                    currentRes = foundRes;
+                    localStorage.setItem('admin_session', JSON.stringify(currentRes));
+                    startSession();
+                } else { alert("ভুল আইডি!"); }
+            });
+        }
+
+        function createNewRestaurant() {
+            const name = document.getElementById('new-res-name').value.trim();
+            const idNo = document.getElementById('new-res-id').value.trim();
+            const phone = document.getElementById('new-res-phone').value.trim();
+            if(!name || !idNo || !phone) return alert("তথ্য পূরণ করুন!");
+            db.ref('restaurants').push({
+                name: name, idNo: idNo, phone: phone, status: "APPROVED",
+                address: "Not Provided", deliveryCharge: 0, lat: 23.8, lng: 90.4
+            }).then(() => { alert("সফল!"); toggleNewResForm(); });
+        }
+
+        function toggleNewResForm() {
+            document.getElementById('res-selector-area').classList.toggle('hidden');
+            document.getElementById('new-res-form').classList.toggle('hidden');
+        }
+
+        function startSession() {
+            const session = localStorage.getItem('admin_session');
+            if (session) {
+                currentRes = JSON.parse(session);
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('main-content').classList.remove('hidden');
+                document.getElementById('display-res-name').innerText = currentRes.name;
+                document.getElementById('display-res-id').innerText = "ID: " + currentRes.idNo;
+                loadResData();
+            }
+        }
+
+        function loadResData() {
+            db.ref('orders').on('value', snap => {
+                const all = snap.val() || {};
+                const mine = {};
+                Object.keys(all).forEach(k => {
+                    if(all[k].restaurantName?.toLowerCase() === currentRes.name.toLowerCase()) mine[k] = all[k];
+                });
+                if(Object.keys(mine).length > lastOrderCount && lastOrderCount !== 0) startAlarm();
+                lastOrderCount = Object.keys(mine).length;
+                renderOrders(mine);
+            });
+
+            db.ref(`menus/${currentRes.idNo}`).on('value', snap => {
+                const menuData = snap.val() || {};
+                renderMenu(menuData);
+                renderGallery(menuData);
+            });
+        }
+
+        function renderOrders(orders) {
+            const container = document.getElementById('res-orders-list');
+            let rev = 0; container.innerHTML = "";
+            Object.keys(orders).reverse().forEach(id => {
+                const o = orders[id];
+                if(o.status === 'DELIVERED') rev += parseFloat(o.total || 0);
+                container.innerHTML += `
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border flex justify-between items-center">
+                        <div><p class="text-xs font-bold text-gray-400">#${id.slice(-5)}</p>
+                        <h3 class="font-bold">৳ ${o.total}</h3><p class="text-xs">${o.status}</p></div>
+                        <div class="flex gap-2">
+                            <button onclick="updateStatus('${id}','ACCEPTED')" class="bg-blue-500 text-white px-3 py-1 rounded-lg text-xs">Accept</button>
+                            <button onclick="updateStatus('${id}','DELIVERED')" class="bg-green-500 text-white px-3 py-1 rounded-lg text-xs">Done</button>
+                        </div>
+                    </div>`;
+            });
+            document.getElementById('stat-res-revenue').innerText = '৳ ' + rev;
+            document.getElementById('stat-res-orders').innerText = Object.keys(orders).length;
+        }
+
+        function renderMenu(menuData) {
+            const container = document.getElementById('menu-table-body');
+            container.innerHTML = "";
+            Object.keys(menuData).forEach(id => {
+                const item = menuData[id];
+                container.innerHTML += `
+                <tr class="border-b hover:bg-gray-50 transition">
+                    <td class="p-4 flex items-center gap-3">
+                        <img src="${item.image}" class="w-12 h-12 rounded-xl object-cover border shadow-sm">
+                        <span class="font-bold text-gray-700">${item.name}</span>
+                    </td>
+                    <td class="p-4">
+                        <span class="text-red-600 font-black">৳${item.price}</span>
+                    </td>
+                    <td class="p-4 text-right">
+                        <button onclick="deleteMenuItem('${id}')" class="bg-red-50 text-red-600 p-2.5 rounded-full hover:bg-red-600 hover:text-white transition">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </td>
+                </tr>`;
+            });
+        }
+
+        function renderGallery(menuData) {
+            const container = document.getElementById('gallery-grid');
+            container.innerHTML = "";
+            Object.keys(menuData).forEach(id => {
+                const item = menuData[id];
+                container.innerHTML += `
+                    <div class="relative group aspect-square rounded-xl overflow-hidden border bg-white">
+                        <img src="${item.image}" class="w-full h-full object-cover">
+                        <button onclick="deleteMenuItem('${id}')" class="absolute top-2 right-2 bg-red-600 text-white w-8 h-8 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition flex items-center justify-center">
+                            <i class="fas fa-trash-alt text-xs"></i>
+                        </button>
+                        <div class="absolute bottom-0 left-0 right-0 bg-black/50 p-2 text-[10px] text-white font-bold truncate">${item.name}</div>
+                    </div>`;
+            });
+        }
+
+        async function addMenuItem() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*';
+            input.onchange = async () => {
+                const file = input.files[0];
+                if(!file) return;
+                const baseName = prompt("খাবারের নাম:");
+                if(!baseName) return;
+
+                const hasVariants = confirm("এই খাবারটির কি হাফ (Half) এবং ফুল (Full) সাইজ আছে?");
+                let variants = [];
+                if(hasVariants) {
+                    const halfPrice = prompt(baseName + " (Half) এর মূল্য (৳):");
+                    const fullPrice = prompt(baseName + " (Full) এর মূল্য (৳):");
+                    if(!halfPrice || !fullPrice) return alert("সঠিক মূল্য দিন!");
+                    variants.push({ name: baseName + " (Half)", price: parseFloat(halfPrice) });
+                    variants.push({ name: baseName + " (Full)", price: parseFloat(fullPrice) });
+                } else {
+                    const price = prompt("খাবারের মূল্য (৳):");
+                    if(!price) return alert("মূল্য দিন!");
+                    variants.push({ name: baseName, price: parseFloat(price) });
+                }
+
+                const btn = document.getElementById('add-item-btn');
+                btn.innerText = "আপলোড হচ্ছে..."; btn.disabled = true;
+                
+                const fd = new FormData(); fd.append('image', file);
+                try {
+                    const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: 'POST', body: fd });
+                    const json = await res.json();
+                    if(json.success) {
+                        for (let v of variants) {
+                            await db.ref(`menus/${currentRes.idNo}`).push({ name: v.name, price: v.price, image: json.data.url });
+                        }
+                    }
+                } catch (e) { alert("ভুল হয়েছে!"); }
+                btn.innerText = "+ খাবার যোগ করুন"; btn.disabled = false;
+            };
+            input.click();
+        }
+
+        function deleteMenuItem(id) { 
+            if(confirm("আপনি কি নিশ্চিতভাবে এই খাবারটি মুছে ফেলতে চান?")) {
+                db.ref(`menus/${currentRes.idNo}/${id}`).remove(); 
+            }
+        }
+
+        function updateStatus(id, s) { db.ref(`orders/${id}`).update({ status: s }); }
+        
+        function showSection(id) {
+            document.querySelectorAll('main section').forEach(s => s.classList.add('hidden-section'));
+            document.getElementById('sec-'+id).classList.remove('hidden-section');
+            document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('sidebar-active'));
+            document.getElementById('btn-'+id).classList.add('sidebar-active');
+        }
+
+        function startAlarm() { document.getElementById('alarm-overlay').classList.remove('hidden'); document.getElementById('order-sound').play(); }
+        function stopAlarm() { document.getElementById('alarm-overlay').classList.add('hidden'); document.getElementById('order-sound').pause(); showSection('orders'); }
+        function backToAdmin() { localStorage.removeItem('admin_session'); location.reload(); }
+
+        window.onload = startSession;
+    </script>
+</body>
+</html>
